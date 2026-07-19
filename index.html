@@ -455,6 +455,7 @@ pre{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);p
         <tr><td>Shoreline</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">4,000 sqft</td><td style="color:var(--green)">Yes (185th Link)</td><td style="font-size:10px;color:var(--text2)">Phase 3 upzone 2033; R-6 now</td></tr>
         <tr><td>Bellevue</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">3,500 sqft</td><td style="color:var(--green)">Yes</td><td style="font-size:10px;color:var(--text2)">DADU added June 2025 HB 1337 update</td></tr>
         <tr><td>Redmond</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">4,000 sqft</td><td style="color:var(--green)">Yes</td><td style="font-size:10px;color:var(--text2)">Both types permitted</td></tr>
+        <tr><td>Everett</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">4,800 sqft</td><td style="color:var(--green)">Yes (Swift BRT)</td><td style="font-size:10px;color:var(--text2)">Snohomish Co.; HB 1337 compliant 2025</td></tr>
         <tr><td>Tacoma</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">4,000 sqft</td><td style="color:var(--green)">Yes</td><td style="font-size:10px;color:var(--text2)">Pierce Co.; active ADU program</td></tr>
         <tr><td>Spokane</td><td class="mono">&gt;1,000 sqft</td><td class="mono">24 ft</td><td class="mono">3,000 sqft</td><td style="color:var(--green)">Yes</td><td style="font-size:10px;color:var(--text2)">Fee waivers; larger units allowed</td></tr>
         <tr><td>Port Angeles</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">4,000 sqft</td><td class="mono">N/A</td><td style="font-size:10px;color:var(--text2)">Permit fee waiver program active</td></tr>
@@ -638,29 +639,68 @@ const FMAP = {
   wa_state:  { pin:'PARCEL_ID',addr:'SITE_ADDRESS', lot:'LAND_SQFT',  zone:'ZONING',     use:'USE_CODE',    yr:'YEAR_BUILT'},
 };
 
+// Normalize address input for GIS matching
+// Strips directional suffixes, ordinal indicators, and extra whitespace
+// so "622 47th St SE" matches "622 47TH ST SE" or "622 47 ST" in GIS
+function normalizeSearchText(text) {
+  // Drop everything after first comma (city, state, zip)
+  let t = text.replace(/,.*$/, '').trim();
+  // Strip trailing single cardinal (N, S, E, W) — e.g. "38th Ave W" → "38th Ave"
+  // but NOT compound cardinals like NE/SW (handled separately)
+  const withoutTrailing = t.replace(/\s+[NSEW]\s*$/i, '').trim();
+  // Strip trailing compound directional suffix (SE, SW, NE, NW)
+  const withoutDir = t.replace(/\s+(SE|SW|NE|NW)\s*$/i, '').trim();
+  // Strip ordinal suffixes (47th→47, 3rd→3, 22nd→22, 38th→38)
+  const noOrdinal = t.replace(/(\d+)(st|nd|rd|th)\b/gi, '$1');
+  const noOrdinalNoTrailing = withoutTrailing.replace(/(\d+)(st|nd|rd|th)\b/gi, '$1');
+  return { full: t, withoutTrailing, withoutDir, noOrdinal, noOrdinalNoTrailing };
+}
+
 async function gisSearch(text, countyKey) {
   const ep = ENDPOINTS[countyKey] || ENDPOINTS.wa_state;
   const fm = FMAP[countyKey]      || FMAP.wa_state;
   const addrField = fm.addr;
+  const { full, withoutTrailing, withoutDir, noOrdinal, noOrdinalNoTrailing } = normalizeSearchText(text);
 
-  // Build WHERE clause
-  const where = countyKey === 'wa_state'
-    ? `UPPER(${addrField}) LIKE UPPER('%${text}%') AND UPPER(COUNTY_NM) LIKE UPPER('%${WA_COUNTIES.find(c=>c.key===countyKey)?.name.split(' ')[0]||text}%')`
-    : `UPPER(${addrField}) LIKE UPPER('%${text}%')`;
+  // Build WHERE — try both full and no-ordinal variants
+  const makeWhere = (term) => countyKey === 'wa_state'
+    ? `UPPER(${addrField}) LIKE UPPER('%${term}%') AND UPPER(COUNTY_NM) LIKE UPPER('%${WA_COUNTIES.find(c=>c.key===countyKey)?.name.split(' ')[0]||''}%')`
+    : `UPPER(${addrField}) LIKE UPPER('%${term}%')`;
 
-  const outFields = Object.values(fm).join(',');
-  const p = new URLSearchParams({ where, outFields, returnGeometry: false, resultRecordCount: 25, f: 'json' });
-
-  try {
-    const r = await fetch(ep + '/query?' + p);
+  const runQuery = async (where) => {
+    const outFields = Object.values(fm).join(',');
+    const p = new URLSearchParams({ where, outFields, returnGeometry: false, resultRecordCount: 25, f: 'json' });
+    const r = await fetch(ep + '/query?' + p, { signal: AbortSignal.timeout(8000) });
     if (!r.ok) throw new Error('HTTP ' + r.status);
     const d = await r.json();
     if (d.error) throw new Error(d.error.message);
     return (d.features || []).map(f => normalizeAttr(f.attributes, countyKey, fm));
+  };
+
+  try {
+    // Progressive fallback: try increasingly loose address matches
+    const variants = [full, withoutTrailing, withoutDir, noOrdinal, noOrdinalNoTrailing];
+    const seen = new Set();
+    let results = [];
+    for (const v of variants) {
+      if (!v || seen.has(v)) continue;
+      seen.add(v);
+      results = await runQuery(makeWhere(v));
+      if (results.length) break;
+    }
+    // Last resort: house number + street number only (e.g. "22703 38")
+    if (!results.length) {
+      const parts = full.split(/\s+/);
+      if (parts.length >= 2) {
+        const short = parts[0] + ' ' + parts[1].replace(/(st|nd|rd|th)$/i,'');
+        if (!seen.has(short)) results = await runQuery(makeWhere(short));
+      }
+    }
+    return results;
   } catch(e) {
-    // Fallback to WA state layer
+    // Fallback to WA state parcel layer
     if (countyKey !== 'wa_state') {
-      return await gisSearch(text, 'wa_state');
+      try { return await gisSearch(text, 'wa_state'); } catch(e2) { return []; }
     }
     return [];
   }
@@ -815,7 +855,9 @@ async function fetchAC(text) {
   ac.innerHTML = '<div class="ac-load"><span class="spin"></span>Searching parcels…</div>';
   ac.classList.add('open');
   const county = document.getElementById('county-sel').value;
-  const results = await gisSearch(text, county);
+  const effectiveCounty = resolveCounty(text, county);
+  if (effectiveCounty !== county) document.getElementById('county-sel').value = effectiveCounty;
+  const results = await gisSearch(text, effectiveCounty);
   acCache = results.slice(0, 12);
   if (!acCache.length) {
     ac.innerHTML = '<div class="ac-load" style="color:var(--text3)">No parcels found — try a street name without zip, or switch counties</div>';
@@ -857,12 +899,43 @@ document.addEventListener('click', e => { if (!document.getElementById('swrap').
 ═══════════════════════════════════════════ */
 let props = [];
 
+// City → county auto-routing table
+const CITY_COUNTY = {
+  'EVERETT':'snohomish','MARYSVILLE':'snohomish','LYNNWOOD':'snohomish',
+  'MOUNTLAKE TERRACE':'snohomish','EDMONDS':'snohomish','MUKILTEO':'snohomish',
+  'BOTHELL':'snohomish','MILL CREEK':'snohomish','MONROE':'snohomish','SNOHOMISH':'snohomish',
+  'SHORELINE':'king','BELLEVUE':'king','REDMOND':'king','KIRKLAND':'king',
+  'RENTON':'king','KENT':'king','AUBURN':'king','BURIEN':'king','TUKWILA':'king',
+  'TACOMA':'pierce','PUYALLUP':'pierce','LAKEWOOD':'pierce','GIG HARBOR':'pierce',
+  'VANCOUVER':'clark','CAMAS':'clark','BATTLE GROUND':'clark','WASHOUGAL':'clark',
+  'SPOKANE':'spokane','SPOKANE VALLEY':'spokane','CHENEY':'spokane',
+  'OLYMPIA':'thurston','LACEY':'thurston','TUMWATER':'thurston',
+  'BELLINGHAM':'whatcom','FERNDALE':'whatcom','LYNDEN':'whatcom',
+  'BREMERTON':'kitsap','SILVERDALE':'kitsap','POULSBO':'kitsap',
+  'YAKIMA':'yakima','KENNEWICK':'benton','RICHLAND':'benton','PASCO':'franklin',
+};
+
+function resolveCounty(text, selectedCounty) {
+  const upper = text.toUpperCase();
+  for (const [city, key] of Object.entries(CITY_COUNTY)) {
+    if (upper.includes(city)) return key;
+  }
+  return selectedCounty;
+}
+
 async function runSearch() {
   const q = document.getElementById('addr').value.trim();
-  const county = document.getElementById('county-sel').value;
+  let county = document.getElementById('county-sel').value;
   closeAC();
   if (!q) { alert('Enter an address or parcel number to search.'); return; }
-  showLoad('Querying GIS…', `Fetching from ${WA_COUNTIES.find(c=>c.key===county)?.name || 'WA State'} parcel data`);
+  // Auto-detect county from city name in address
+  const resolved = resolveCounty(q, county);
+  if (resolved !== county) {
+    county = resolved;
+    document.getElementById('county-sel').value = county;
+  }
+  const countyName = WA_COUNTIES.find(c=>c.key===county)?.name || 'WA State';
+  showLoad('Querying GIS…', `Fetching from ${countyName} parcel data`);
   const results = await gisSearch(q, county);
   runSearchWith(results, q);
 }
@@ -978,6 +1051,7 @@ function closeModal() { document.getElementById('modal').classList.remove('open'
 const DEMO_RAW = [
   { PIN:'00524200000300', ADDR_FULL:'4908 236th St SW, Mountlake Terrace WA 98043', LOT_AREA:7405, ZONE_CLASS:'R-SF', PRESENT_USE:'Single Family', YEAR_BUILT:1951, _county:'snohomish', _src:'Snohomish GIS' },
   { PIN:'00524200000202', ADDR_FULL:'22204 48th Ave W, Mountlake Terrace WA 98043', LOT_AREA:7841, ZONE_CLASS:'R-SF', PRESENT_USE:'Single Family', YEAR_BUILT:1954, _county:'snohomish', _src:'Snohomish GIS' },
+  { PIN:'00481900001600', ADDR_FULL:'22703 38th Ave W, Mountlake Terrace WA 98043',  LOT_AREA:7405, ZONE_CLASS:'R-SF', PRESENT_USE:'Single Family', YEAR_BUILT:1963, _county:'snohomish', _src:'Snohomish GIS' },
   { PIN:'00524200000410', ADDR_FULL:'22605 61st Ave W, Mountlake Terrace WA 98043', LOT_AREA:7405, ZONE_CLASS:'R-SF', PRESENT_USE:'Single Family', YEAR_BUILT:1953, _county:'snohomish', _src:'Snohomish GIS' },
   { PIN:'7770600020',     ADDR_FULL:'17633 10th Ave NE, Shoreline WA 98155',        LOT_AREA:9147, ZONE_CLASS:'R-6',  PRESENT_USE:'Single Family', YEAR_BUILT:1939, _county:'king',      _src:'King County GIS' },
   { PIN:'7890120007',     ADDR_FULL:'4310 Burke Ave N, Seattle WA 98103',           LOT_AREA:8100, ZONE_CLASS:'RSF 9600', PRESENT_USE:'Single Family', YEAR_BUILT:1960, _county:'king',  _src:'King County GIS' },
@@ -990,6 +1064,7 @@ const DEMO_RAW = [
   { PIN:'5678900005',     ADDR_FULL:'3822 Fremont Ave N, Seattle WA 98103',         LOT_AREA:2800, ZONE_CLASS:'SF 5000', PRESENT_USE:'Single Family', YEAR_BUILT:1942, _county:'king',   _src:'King County GIS' },
   { PIN:'2345670002',     ADDR_FULL:'712 19th Ave E, Seattle WA 98112',             LOT_AREA:3800, ZONE_CLASS:'SF 5000', PRESENT_USE:'Single Family', YEAR_BUILT:1920, _county:'king',   _src:'King County GIS' },
   { PIN:'9900004001',     ADDR_FULL:'621 Lilly Rd NE, Olympia WA 98506',            LOT_AREA:9200, ZONE_CLASS:'RR 1/5', PRESENT_USE:'Single Family', YEAR_BUILT:1972, _county:'thurston',_src:'WA State GIS' },
+  { PIN:'00437300001400', ADDR_FULL:'622 47th St SE, Everett WA 98203',         LOT_AREA:10454, ZONE_CLASS:'R1', PRESENT_USE:'Single Family', YEAR_BUILT:1948, _county:'snohomish', _src:'Snohomish GIS' },
   { PIN:'9900005001',     ADDR_FULL:'1504 Iowa St, Bellingham WA 98229',             LOT_AREA:7000, ZONE_CLASS:'RS',      PRESENT_USE:'Single Family', YEAR_BUILT:1967, _county:'whatcom', _src:'WA State GIS' },
 ];
 
@@ -998,7 +1073,7 @@ function loadDemo() {
   showLoad('Loading demo data…', 'Sample properties across Washington State');
   setTimeout(() => {
     props = DEMO_RAW.map(normalize);
-    renderResults(props, 'Demo · 6 Counties');
+    renderResults(props, 'Demo · 7 Counties');
   }, 500);
 }
 
