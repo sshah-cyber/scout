@@ -1,0 +1,1050 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ADU Scout — Washington State</title>
+<meta name="description" content="Live ADU buildability search across Washington State parcels. Powered by county GIS APIs and HB 1337 statewide rules.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0b0f18;--bg2:#111827;--bg3:#1a2233;--bg4:#232f44;
+  --border:rgba(255,255,255,.06);--border2:rgba(255,255,255,.12);
+  --text:#e4eaf4;--text2:#8394ac;--text3:#4a5568;
+  --accent:#3b82f6;--accent2:#1d4ed8;--accent3:#1e3a6e;
+  --green:#10b981;--green-bg:rgba(16,185,129,.08);--green-bd:rgba(16,185,129,.25);
+  --amber:#f59e0b;--amber-bg:rgba(245,158,11,.08);--amber-bd:rgba(245,158,11,.25);
+  --red:#ef4444;--red-bg:rgba(239,68,68,.08);--red-bd:rgba(239,68,68,.25);
+  --purple:#8b5cf6;--purple-bg:rgba(139,92,246,.08);
+  --mono:'JetBrains Mono',monospace;
+  --sans:'Inter',system-ui,sans-serif;
+  --r:7px;--rl:11px;
+}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.6;min-height:100vh}
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-thumb{background:var(--bg4);border-radius:2px}
+
+/* ── HEADER ── */
+.hdr{
+  position:sticky;top:0;z-index:200;
+  background:rgba(11,15,24,.95);backdrop-filter:blur(16px);
+  border-bottom:1px solid var(--border);
+  height:54px;display:flex;align-items:center;justify-content:space-between;padding:0 22px;
+}
+.logo{display:flex;align-items:center;gap:10px;text-decoration:none}
+.logo-mark{
+  width:32px;height:32px;border-radius:8px;
+  background:linear-gradient(135deg,var(--accent2),var(--accent));
+  display:flex;align-items:center;justify-content:center;
+}
+.logo-name{font-size:15px;font-weight:600;color:var(--text);letter-spacing:-.4px}
+.logo-tag{font-size:11px;color:var(--text3);font-family:var(--mono);letter-spacing:.02em}
+.hdr-right{display:flex;align-items:center;gap:8px}
+.hpill{display:flex;align-items:center;gap:5px;font-size:10px;font-family:var(--mono);color:var(--text2);background:var(--bg2);border:1px solid var(--border);border-radius:20px;padding:3px 9px;letter-spacing:.03em}
+.dot{width:5px;height:5px;border-radius:50%;flex-shrink:0}
+.dot.live{background:var(--green);animation:blink 2s ease-in-out infinite}
+.dot.req{background:var(--amber)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* ── LAYOUT ── */
+.layout{display:flex;height:calc(100vh - 54px)}
+
+/* ── SIDEBAR ── */
+.sidebar{
+  width:295px;flex-shrink:0;
+  background:var(--bg2);border-right:1px solid var(--border);
+  overflow-y:auto;display:flex;flex-direction:column;
+}
+.sb{padding:14px 16px;border-bottom:1px solid var(--border)}
+.sbl{font-size:9px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--text3);margin-bottom:9px}
+
+/* search */
+.sw{position:relative;margin-bottom:8px}
+.sw input{
+  width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--r);color:var(--text);font-family:var(--sans);
+  font-size:13px;padding:8px 32px 8px 32px;outline:none;transition:border-color .15s;
+}
+.sw input:focus{border-color:var(--accent)}
+.sw input::placeholder{color:var(--text3)}
+.si{position:absolute;left:9px;top:50%;transform:translateY(-50%);color:var(--text3);font-size:14px;pointer-events:none}
+.sx{position:absolute;right:8px;top:50%;transform:translateY(-50%);background:none;border:none;color:var(--text3);cursor:pointer;font-size:13px;padding:0;display:none}
+.sx.show{display:block}
+
+/* autocomplete */
+.ac{position:absolute;top:calc(100% + 3px);left:0;right:0;background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);z-index:400;max-height:220px;overflow-y:auto;display:none;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+.ac.open{display:block}
+.ac-item{padding:8px 11px;font-size:12px;cursor:pointer;border-bottom:1px solid var(--border);transition:background .1s}
+.ac-item:last-child{border-bottom:none}
+.ac-item:hover,.ac-item.foc{background:var(--bg4)}
+.ac-addr{color:var(--text);font-weight:500}
+.ac-meta{font-size:10px;color:var(--text2);font-family:var(--mono);margin-top:1px}
+.ac-load{padding:9px 11px;font-size:12px;color:var(--text2);display:flex;align-items:center;gap:7px}
+
+/* county select */
+select{
+  width:100%;background:var(--bg3);border:1px solid var(--border2);
+  border-radius:var(--r);color:var(--text);font-family:var(--sans);
+  font-size:13px;padding:7px 9px;outline:none;cursor:pointer;
+  transition:border-color .15s;
+}
+select:focus{border-color:var(--accent)}
+select option{background:var(--bg3)}
+
+/* chips */
+.cg{display:grid;grid-template-columns:1fr 1fr;gap:5px}
+.chip{background:var(--bg3);border:1px solid var(--border);border-radius:5px;padding:5px 7px;font-size:11px;color:var(--text2);text-align:center;cursor:pointer;transition:all .15s;user-select:none}
+.chip:hover{border-color:var(--border2);color:var(--text)}
+.chip.on{background:var(--purple-bg);border-color:var(--purple);color:var(--purple)}
+
+/* buttons */
+.btn-run{
+  width:100%;padding:8px;
+  background:linear-gradient(135deg,var(--accent2),var(--accent));
+  border:none;border-radius:var(--r);
+  color:#fff;font-family:var(--sans);font-size:13px;font-weight:500;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;
+  transition:opacity .15s;
+}
+.btn-run:hover{opacity:.9}
+.btn-run:disabled{opacity:.5;cursor:default}
+.btn-sec{
+  width:100%;padding:6px 8px;
+  background:transparent;border:1px solid var(--border2);border-radius:var(--r);
+  color:var(--text2);font-family:var(--sans);font-size:12px;
+  cursor:pointer;margin-top:6px;transition:all .15s;text-align:left;
+}
+.btn-sec:hover{border-color:var(--accent);color:var(--accent)}
+
+/* sources */
+.src-row{display:flex;align-items:center;justify-content:space-between;font-size:11px;padding:3px 0}
+.src-n{display:flex;align-items:center;gap:6px;color:var(--text2)}
+.src-b{font-size:9px;font-family:var(--mono);padding:2px 5px;border-radius:3px;letter-spacing:.03em}
+.sb-live{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
+.sb-mock{background:var(--purple-bg);color:var(--purple);border:1px solid rgba(139,92,246,.3)}
+.sb-req{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd)}
+
+/* ── MAIN ── */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+.tabs{display:flex;border-bottom:1px solid var(--border);padding:0 18px;background:var(--bg);flex-shrink:0}
+.tab{padding:13px 12px;font-size:12px;color:var(--text2);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s;white-space:nowrap}
+.tab:hover{color:var(--text)}
+.tab.on{color:var(--accent);border-bottom-color:var(--accent)}
+.tab-ct{display:inline-flex;align-items:center;justify-content:center;background:var(--bg3);color:var(--text3);font-size:9px;font-family:var(--mono);min-width:16px;height:16px;border-radius:8px;padding:0 4px;margin-left:4px}
+.tab.on .tab-ct{background:var(--accent2);color:#fff}
+.panel{flex:1;overflow-y:auto;padding:18px;display:none}
+.panel.on{display:block}
+
+/* ── STATES ── */
+.state-box{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:56px 20px;text-align:center;min-height:280px}
+.state-ico{font-size:36px;margin-bottom:12px;opacity:.2}
+.state-title{font-size:14px;font-weight:500;color:var(--text2);margin-bottom:5px}
+.state-sub{font-size:12px;color:var(--text3);max-width:320px;line-height:1.65}
+.prog{width:240px;height:2px;background:var(--bg3);border-radius:2px;margin-top:18px;overflow:hidden}
+.prog-fill{height:100%;background:var(--accent);animation:prog 1.3s ease-in-out infinite}
+@keyframes prog{0%{width:0;margin-left:0}50%{width:60%;margin-left:20%}100%{width:0;margin-left:100%}}
+
+/* ── SUMMARY ── */
+.summary{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin-bottom:16px}
+.sum{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:12px 14px}
+.sum-val{font-size:20px;font-weight:600;font-family:var(--mono);letter-spacing:-1px}
+.sum-key{font-size:10px;color:var(--text2);margin-top:2px}
+
+/* ── CARDS ── */
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(290px,1fr));gap:10px}
+.pcard{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:14px;cursor:pointer;transition:all .15s;position:relative;overflow:hidden}
+.pcard::after{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.pcard.eligible::after{background:var(--green)}
+.pcard.conditional::after{background:var(--amber)}
+.pcard.ineligible::after{background:var(--red)}
+.pcard:hover{border-color:var(--border2);transform:translateY(-1px);box-shadow:0 4px 20px rgba(0,0,0,.3)}
+.ct{display:flex;align-items:flex-start;justify-content:space-between;gap:8px;margin-bottom:9px}
+.ca{font-size:13px;font-weight:500;line-height:1.3}
+.cs{font-size:10px;color:var(--text3);margin-top:2px;font-family:var(--mono)}
+.apill{flex-shrink:0;font-size:9px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;padding:3px 7px;border-radius:4px}
+.apill.eligible{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
+.apill.conditional{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd)}
+.apill.ineligible{background:var(--red-bg);color:var(--red);border:1px solid var(--red-bd)}
+.cm-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:9px}
+.cm{background:var(--bg3);border-radius:5px;padding:6px 8px}
+.cm-val{font-size:12px;font-weight:500;font-family:var(--mono)}
+.cm-key{font-size:9px;color:var(--text3);margin-top:1px}
+.tags{display:flex;flex-wrap:wrap;gap:3px}
+.tag{font-size:9px;padding:2px 5px;border-radius:3px;background:var(--bg3);border:1px solid var(--border);color:var(--text2);font-family:var(--mono)}
+.tag.g{background:var(--green-bg);border-color:rgba(16,185,129,.2);color:var(--green)}
+.tag.a{background:var(--amber-bg);border-color:rgba(245,158,11,.2);color:var(--amber)}
+.tag.b{background:rgba(59,130,246,.08);border-color:rgba(59,130,246,.2);color:var(--accent)}
+.tag.p{background:var(--purple-bg);border-color:rgba(139,92,246,.2);color:var(--purple)}
+
+/* ── MODAL ── */
+.mwrap{display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:500;align-items:center;justify-content:center}
+.mwrap.open{display:flex}
+.modal{background:var(--bg2);border:1px solid var(--border2);border-radius:var(--rl);width:min(620px,94vw);max-height:88vh;overflow-y:auto;box-shadow:0 32px 64px rgba(0,0,0,.8)}
+.mhead{display:flex;align-items:center;justify-content:space-between;padding:14px 17px;border-bottom:1px solid var(--border);position:sticky;top:0;background:var(--bg2);z-index:1}
+.mtitle{font-size:13px;font-weight:600}
+.mclose{background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:5px;width:25px;height:25px;cursor:pointer;font-size:14px;display:flex;align-items:center;justify-content:center;transition:all .15s}
+.mclose:hover{border-color:var(--red);color:var(--red)}
+.mbody{padding:16px}
+.msec-title{font-size:9px;font-weight:600;letter-spacing:.1em;text-transform:uppercase;color:var(--text3);margin-bottom:7px}
+.m4{display:grid;grid-template-columns:repeat(4,1fr);gap:7px;margin-bottom:14px}
+.chk-list{display:flex;flex-direction:column;gap:4px;margin-bottom:12px}
+.chk{display:flex;align-items:flex-start;gap:8px;padding:7px 10px;border-radius:5px;font-size:11px;line-height:1.5}
+.chk.pass{background:var(--green-bg);border:1px solid rgba(16,185,129,.15)}
+.chk.warn{background:var(--amber-bg);border:1px solid rgba(245,158,11,.15)}
+.chk.fail{background:var(--red-bg);border:1px solid rgba(239,68,68,.15)}
+.chk-icon{flex-shrink:0;margin-top:1px;font-size:11px}
+.mhr{border:none;border-top:1px solid var(--border);margin:12px 0}
+.gis-tag{display:inline-flex;align-items:center;gap:5px;font-size:9px;font-family:var(--mono);background:rgba(59,130,246,.08);color:var(--accent);border:1px solid rgba(59,130,246,.2);border-radius:3px;padding:2px 7px;margin-bottom:9px;letter-spacing:.03em}
+
+/* ── ZONING TABLE ── */
+.ztable{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);overflow:hidden;margin-bottom:16px}
+.ztable table{width:100%;border-collapse:collapse}
+.ztable th{background:var(--bg3);padding:8px 12px;text-align:left;font-size:9px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--text2);border-bottom:1px solid var(--border)}
+.ztable td{padding:8px 12px;font-size:11px;border-bottom:1px solid var(--border)}
+.ztable tr:last-child td{border-bottom:none}
+.ztable tr:hover td{background:var(--bg3)}
+.mono{font-family:var(--mono);font-size:10px;color:var(--accent)}
+
+/* ── INFO BANNER ── */
+.info-banner{background:rgba(29,78,216,.07);border:1px solid rgba(59,130,246,.18);border-radius:var(--r);padding:9px 13px;font-size:11px;color:var(--accent);margin-bottom:14px;display:flex;align-items:flex-start;gap:7px;line-height:1.65}
+
+/* ── CALCULATOR ── */
+.calc-wrap{background:var(--bg2);border:1px solid var(--border);border-radius:var(--rl);padding:15px}
+.sl-row{display:flex;align-items:center;gap:9px;margin-bottom:9px}
+.sl-label{font-size:11px;color:var(--text2);width:130px;flex-shrink:0}
+input[type=range]{flex:1;accent-color:var(--accent)}
+.sl-val{font-size:11px;font-family:var(--mono);font-weight:500;width:78px;text-align:right}
+.calc-result{background:var(--bg3);border-radius:var(--r);padding:12px;margin-top:11px;display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.cr-key{font-size:10px;color:var(--text2)}
+.cr-val{font-size:14px;font-weight:500;font-family:var(--mono);margin-top:2px}
+
+/* ── CODE ── */
+.code-section{margin-bottom:20px}
+.code-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+.code-title{font-size:12px;font-weight:500;display:flex;align-items:center;gap:6px}
+.copy-btn{background:var(--bg3);border:1px solid var(--border);color:var(--text2);border-radius:4px;font-size:10px;padding:3px 9px;cursor:pointer;font-family:var(--sans);transition:all .15s}
+.copy-btn:hover{color:var(--text);border-color:var(--border2)}
+pre{background:var(--bg);border:1px solid var(--border);border-radius:var(--r);padding:13px;font-family:var(--mono);font-size:11px;line-height:1.7;overflow-x:auto;tab-size:2}
+.cmt{color:var(--text3)}.ky{color:#7dd3fc}.str{color:#86efac}.fn{color:#c4b5fd}.kw{color:#fca5a5}.nm{color:var(--amber)}
+
+/* ── SPINNER ── */
+.spin{display:inline-block;width:12px;height:12px;border:2px solid rgba(255,255,255,.2);border-top-color:#fff;border-radius:50%;animation:rot .7s linear infinite;flex-shrink:0}
+@keyframes rot{to{transform:rotate(360deg)}}
+
+/* ── WA COUNTY MAP ── */
+.wa-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:7px;margin-bottom:16px}
+.wa-county{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);padding:9px 11px;cursor:pointer;transition:all .15s}
+.wa-county:hover{border-color:var(--border2);background:var(--bg3)}
+.wa-county.sel{border-color:var(--accent);background:rgba(59,130,246,.08)}
+.wa-cname{font-size:12px;font-weight:500}
+.wa-cmeta{font-size:10px;color:var(--text2);font-family:var(--mono);margin-top:2px}
+.wa-tier{font-size:9px;padding:1px 5px;border-radius:3px;margin-top:4px;display:inline-block}
+.tier-full{background:var(--green-bg);color:var(--green);border:1px solid var(--green-bd)}
+.tier-partial{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-bd)}
+.tier-manual{background:var(--purple-bg);color:var(--purple);border:1px solid rgba(139,92,246,.3)}
+
+/* ── FOOTER ── */
+.footer{border-top:1px solid var(--border);padding:10px 18px;font-size:10px;color:var(--text3);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+
+/* ── RESPONSIVE ── */
+@media(max-width:860px){.sidebar{width:255px}.summary{grid-template-columns:repeat(2,1fr)}.m4{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:640px){.layout{flex-direction:column;height:auto}.sidebar{width:100%;border-right:none;border-bottom:1px solid var(--border)}.main{min-height:calc(100vh - 54px)}.summary{grid-template-columns:repeat(2,1fr)}.hdr-right{display:none}}
+</style>
+</head>
+<body>
+
+<!-- HEADER -->
+<header class="hdr">
+  <a class="logo" href="#">
+    <div class="logo-mark">
+      <svg width="17" height="17" fill="none" viewBox="0 0 17 17">
+        <rect x="2" y="5" width="7" height="10" rx="1.5" fill="white" opacity=".9"/>
+        <path d="M9 5.5h3.5a1 1 0 011 1v7a1 1 0 01-1 1H9" stroke="white" stroke-width="1.3" opacity=".5"/>
+        <path d="M5.5 5.5V3a2 2 0 114 0v2.5" stroke="white" stroke-width="1.3" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div>
+      <div class="logo-name">ADU Scout</div>
+      <div class="logo-tag">Washington State · Live GIS · HB 1337</div>
+    </div>
+  </a>
+  <div class="hdr-right">
+    <div class="hpill"><div class="dot live"></div>39 Counties</div>
+    <div class="hpill"><div class="dot live"></div>GIS Live</div>
+    <div class="hpill"><div class="dot req"></div>MLS key req.</div>
+  </div>
+</header>
+
+<div class="layout">
+
+<!-- SIDEBAR -->
+<aside class="sidebar">
+
+  <div class="sb">
+    <div class="sbl">Search Any WA Property</div>
+    <div class="sw" id="swrap">
+      <span class="si">⌕</span>
+      <input type="text" id="addr" placeholder="Address, parcel ID, or zip…" autocomplete="off"
+        oninput="onInput()" onkeydown="onKey(event)">
+      <button class="sx" id="sx" onclick="clearS()">✕</button>
+      <div class="ac" id="ac"></div>
+    </div>
+    <select id="county-sel" onchange="onCountyChange()">
+      <optgroup label="─ Metro ─">
+        <option value="king">King County (Seattle)</option>
+        <option value="snohomish">Snohomish County</option>
+        <option value="pierce">Pierce County (Tacoma)</option>
+        <option value="clark">Clark County (Vancouver)</option>
+        <option value="spokane">Spokane County</option>
+        <option value="thurston">Thurston County (Olympia)</option>
+        <option value="whatcom">Whatcom County (Bellingham)</option>
+        <option value="kitsap">Kitsap County (Bremerton)</option>
+        <option value="yakima">Yakima County</option>
+        <option value="benton">Benton County (Tri-Cities)</option>
+      </optgroup>
+      <optgroup label="─ Mid-size ─">
+        <option value="cowlitz">Cowlitz County (Longview)</option>
+        <option value="skagit">Skagit County (Mount Vernon)</option>
+        <option value="island">Island County (Whidbey)</option>
+        <option value="mason">Mason County (Shelton)</option>
+        <option value="lewis">Lewis County (Centralia)</option>
+        <option value="grant">Grant County (Moses Lake)</option>
+        <option value="chelan">Chelan County (Wenatchee)</option>
+        <option value="clallam">Clallam County (Port Angeles)</option>
+        <option value="okanogan">Okanogan County</option>
+        <option value="franklin">Franklin County (Pasco)</option>
+      </optgroup>
+      <optgroup label="─ All 39 Counties ─">
+        <option value="adams">Adams County</option>
+        <option value="asotin">Asotin County</option>
+        <option value="columbia">Columbia County</option>
+        <option value="douglas">Douglas County</option>
+        <option value="ferry">Ferry County</option>
+        <option value="garfield">Garfield County</option>
+        <option value="grays_harbor">Grays Harbor County</option>
+        <option value="jefferson">Jefferson County</option>
+        <option value="klickitat">Klickitat County</option>
+        <option value="lincoln">Lincoln County</option>
+        <option value="pacific">Pacific County</option>
+        <option value="pend_oreille">Pend Oreille County</option>
+        <option value="san_juan">San Juan County</option>
+        <option value="skamania">Skamania County</option>
+        <option value="stevens">Stevens County</option>
+        <option value="wahkiakum">Wahkiakum County</option>
+        <option value="walla_walla">Walla Walla County</option>
+        <option value="whitman">Whitman County (Pullman)</option>
+      </optgroup>
+    </select>
+  </div>
+
+  <div class="sb">
+    <div class="sbl">ADU Type</div>
+    <div class="cg">
+      <div class="chip on" id="f-dadu" onclick="toggleChip('f-dadu')">DADU</div>
+      <div class="chip on" id="f-aadu" onclick="toggleChip('f-aadu')">AADU</div>
+      <div class="chip on" id="f-elig" onclick="toggleChip('f-elig')">Eligible</div>
+      <div class="chip" id="f-transit" onclick="toggleChip('f-transit')">Transit bonus</div>
+    </div>
+  </div>
+
+  <div class="sb">
+    <div class="sbl">Lot Size</div>
+    <div class="cg">
+      <div class="chip on" id="ls-any" onclick="toggleChip('ls-any')">Any size</div>
+      <div class="chip" id="ls-4k" onclick="toggleChip('ls-4k')">4,000+ sqft</div>
+      <div class="chip" id="ls-6k" onclick="toggleChip('ls-6k')">6,000+ sqft</div>
+      <div class="chip" id="ls-10k" onclick="toggleChip('ls-10k')">10,000+ sqft</div>
+    </div>
+  </div>
+
+  <div class="sb">
+    <button class="btn-run" id="run-btn" onclick="runSearch()">
+      <svg width="12" height="12" fill="none" viewBox="0 0 12 12"><path d="M2 1.5l9 4.5-9 4.5V1.5z" fill="white"/></svg>
+      Search Parcels
+    </button>
+    <button class="btn-sec" onclick="loadDemo()">▷ Load demo properties</button>
+    <button class="btn-sec" onclick="switchTab('counties')">🗺 Browse all 39 counties</button>
+    <button class="btn-sec" onclick="switchTab('zoning')">📋 WA statewide zoning rules</button>
+    <button class="btn-sec" onclick="switchTab('calc')">🧮 Cost &amp; finance calculator</button>
+    <button class="btn-sec" onclick="switchTab('api')">⚙ API integration guide</button>
+  </div>
+
+  <div class="sb">
+    <div class="sbl">Data Sources</div>
+    <div class="src-row"><div class="src-n"><div class="dot live"></div>King / Snohomish GIS</div><span class="src-b sb-live">LIVE</span></div>
+    <div class="src-row"><div class="src-n"><div class="dot live"></div>Pierce / Clark / Spokane</div><span class="src-b sb-live">LIVE</span></div>
+    <div class="src-row"><div class="src-n"><div class="dot live"></div">WA State Parcel Data</div><span class="src-b sb-live">LIVE</span></div>
+    <div class="src-row"><div class="src-n"><div class="dot live"></div">SDCI / Local Zoning</div><span class="src-b sb-live">LIVE</span></div>
+    <div class="src-row"><div class="src-n"><div class="dot req"></div">NWMLS / Bridge API</div><span class="src-b sb-req">KEY REQ.</span></div>
+  </div>
+
+</aside>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="tabs">
+    <div class="tab on" id="tab-results" onclick="switchTab('results')">Results<span class="tab-ct" id="ct">0</span></div>
+    <div class="tab" id="tab-counties" onclick="switchTab('counties')">Counties</div>
+    <div class="tab" id="tab-zoning" onclick="switchTab('zoning')">WA Zoning</div>
+    <div class="tab" id="tab-calc" onclick="switchTab('calc')">Calculator</div>
+    <div class="tab" id="tab-api" onclick="switchTab('api')">API Guide</div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="panel on" id="panel-results">
+    <div id="sum-bar" style="display:none" class="summary">
+      <div class="sum"><div class="sum-val" id="s-e" style="color:var(--green)">0</div><div class="sum-key">Eligible</div></div>
+      <div class="sum"><div class="sum-val" id="s-c" style="color:var(--amber)">0</div><div class="sum-key">Conditional</div></div>
+      <div class="sum"><div class="sum-val" id="s-i" style="color:var(--red)">0</div><div class="sum-key">Ineligible</div></div>
+      <div class="sum"><div class="sum-val" id="s-src" style="color:var(--accent)">—</div><div class="sum-key">Source</div></div>
+    </div>
+    <div id="pgrid" class="grid"></div>
+    <div id="empty" class="state-box">
+      <div class="state-ico">⌕</div>
+      <div class="state-title">Search any Washington State address</div>
+      <div class="state-sub">Type a street address, parcel number, or zip code. ADU Scout queries county GIS in real time and scores every matching parcel for ADU buildability under HB 1337.</div>
+      <div class="state-sub" style="margin-top:8px;color:var(--text3)">Or click <strong style="color:var(--text2)">Load demo properties</strong> to explore sample results.</div>
+    </div>
+    <div id="loading" class="state-box" style="display:none">
+      <div class="spin" style="width:26px;height:26px;border-width:3px;margin-bottom:14px"></div>
+      <div class="state-title" id="load-msg">Querying GIS…</div>
+      <div class="state-sub" id="load-sub">Fetching parcel data</div>
+      <div class="prog"><div class="prog-fill"></div></div>
+    </div>
+  </div>
+
+  <!-- COUNTIES -->
+  <div class="panel" id="panel-counties">
+    <div class="info-banner">ℹ All 39 Washington counties fall under HB 1337 (RCW 36.70A.696) effective July 2025. Click any county to search its parcels. GIS API coverage varies — major counties have full live APIs; smaller counties use the statewide WA parcel layer.</div>
+    <div class="wa-grid" id="county-grid"></div>
+  </div>
+
+  <!-- ZONING -->
+  <div class="panel" id="panel-zoning">
+    <div class="info-banner">ℹ HB 1337 (2023, RCW 36.70A.680–.699) establishes statewide ADU minimums. Cities with pop. &gt;25,000 complied by June 2025; smaller cities by Dec 2025. All must allow ≥2 ADUs/lot in urban growth areas.</div>
+
+    <div style="margin-bottom:10px;font-size:12px;font-weight:500;color:var(--text2)">Statewide HB 1337 Minimums (floor — cities may be more permissive)</div>
+    <div class="ztable"><table>
+      <thead><tr><th>Rule</th><th>Requirement</th><th>Notes</th><th>Authority</th></tr></thead>
+      <tbody>
+        <tr><td>ADUs per lot</td><td style="color:var(--green)">≥ 2 in UGA</td><td style="font-size:10px;color:var(--text2)">Cities &gt;25k pop; smaller cities ≥1</td><td class="mono">RCW 36.70A.696</td></tr>
+        <tr><td>Min ADU size</td><td style="color:var(--green)">1,000 sqft floor</td><td style="font-size:10px;color:var(--text2)">Cities cannot cap below 1,000 sqft</td><td class="mono">RCW 36.70A.681</td></tr>
+        <tr><td>Owner-occupancy</td><td style="color:var(--green)">Not required</td><td style="font-size:10px;color:var(--text2)">Fully investor-owned lots permitted</td><td class="mono">HB 1337 §4</td></tr>
+        <tr><td>Condo sale</td><td style="color:var(--green)">Cannot prohibit</td><td style="font-size:10px;color:var(--text2)">DADU may be sold as independent unit</td><td class="mono">HB 1337 §4(1)(k)</td></tr>
+        <tr><td>Parking (transit ½mi)</td><td style="color:var(--green)">None required</td><td style="font-size:10px;color:var(--text2)">Near major transit stops</td><td class="mono">RCW 36.70A.681</td></tr>
+        <tr><td>Parking (no transit)</td><td class="mono">≤1 space &lt;6k sqft lot; ≤2 &gt;6k</td><td style="font-size:10px;color:var(--text2)">Maximum cities can require</td><td class="mono">RCW 36.70A.681</td></tr>
+        <tr><td>Max height floor</td><td class="mono">24 ft or principal height</td><td style="font-size:10px;color:var(--text2)">Whichever is greater</td><td class="mono">RCW 36.70A.681</td></tr>
+        <tr><td>Impact fees</td><td class="mono">≤50% of principal unit</td><td style="font-size:10px;color:var(--text2)">Some cities waive entirely</td><td class="mono">RCW 36.70A.681</td></tr>
+        <tr><td>HOA restrictions</td><td style="color:var(--green)">Unenforceable</td><td style="font-size:10px;color:var(--text2)">For HOAs formed after July 23, 2023</td><td class="mono">HB 1337 §7</td></tr>
+        <tr><td>Short-term rentals</td><td style="color:var(--amber)">Cities may restrict</td><td style="font-size:10px;color:var(--text2)">Long-term rental protections stronger</td><td class="mono">RCW 36.70A.696</td></tr>
+        <tr><td>Rural parcels</td><td class="mono">≥1 DADU per parcel</td><td style="font-size:10px;color:var(--text2)">HB 1345; no STR; water reqs apply</td><td class="mono">HB 1345 (2023)</td></tr>
+        <tr><td>WA capital gains tax</td><td style="color:var(--green)">Exempt (real estate)</td><td style="font-size:10px;color:var(--text2)">All real estate transactions exempt</td><td class="mono">WAC 458-20-185</td></tr>
+        <tr><td>REET on sale</td><td class="mono">1.1–3.0% tiered</td><td style="font-size:10px;color:var(--text2)">Rate depends on sale price</td><td class="mono">RCW 82.45</td></tr>
+      </tbody>
+    </table></div>
+
+    <div style="margin-bottom:10px;font-size:12px;font-weight:500;color:var(--text2)">Key City Implementations</div>
+    <div class="ztable"><table>
+      <thead><tr><th>City / County</th><th>Max ADU size</th><th>Max height</th><th>Min lot</th><th>Transit parking waiver</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td>Seattle</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">3,200 sqft</td><td style="color:var(--green)">Yes</td><td style="font-size:10px;color:var(--text2)">2 ADUs/lot; SF 5000/7200/RSF 9600</td></tr>
+        <tr><td>Mountlake Terrace</td><td class="mono">1,200 sqft</td><td class="mono">16 ft</td><td class="mono">4,800 sqft</td><td style="color:var(--green)">Yes (185th Link)</td><td style="font-size:10px;color:var(--text2)">R-SF zone; lower height cap</td></tr>
+        <tr><td>Shoreline</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">4,000 sqft</td><td style="color:var(--green)">Yes (185th Link)</td><td style="font-size:10px;color:var(--text2)">Phase 3 upzone 2033; R-6 now</td></tr>
+        <tr><td>Bellevue</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">3,500 sqft</td><td style="color:var(--green)">Yes</td><td style="font-size:10px;color:var(--text2)">DADU added June 2025 HB 1337 update</td></tr>
+        <tr><td>Redmond</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">4,000 sqft</td><td style="color:var(--green)">Yes</td><td style="font-size:10px;color:var(--text2)">Both types permitted</td></tr>
+        <tr><td>Tacoma</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">4,000 sqft</td><td style="color:var(--green)">Yes</td><td style="font-size:10px;color:var(--text2)">Pierce Co.; active ADU program</td></tr>
+        <tr><td>Spokane</td><td class="mono">&gt;1,000 sqft</td><td class="mono">24 ft</td><td class="mono">3,000 sqft</td><td style="color:var(--green)">Yes</td><td style="font-size:10px;color:var(--text2)">Fee waivers; larger units allowed</td></tr>
+        <tr><td>Port Angeles</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">4,000 sqft</td><td class="mono">N/A</td><td style="font-size:10px;color:var(--text2)">Permit fee waiver program active</td></tr>
+        <tr><td>Vancouver</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">4,000 sqft</td><td style="color:var(--green)">Yes</td><td style="font-size:10px;color:var(--text2)">Clark Co.; strong growth corridor</td></tr>
+        <tr><td>Olympia</td><td class="mono">1,000 sqft</td><td class="mono">24 ft</td><td class="mono">3,500 sqft</td><td style="color:var(--green)">Yes</td><td style="font-size:10px;color:var(--text2)">Thurston Co.; capital city</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+
+  <!-- CALCULATOR -->
+  <div class="panel" id="panel-calc">
+    <div class="info-banner">ℹ Estimates only — for planning purposes. Actual costs vary by county, contractor, and site conditions. Consult a licensed contractor, lender, and CPA before committing. I am not a financial advisor.</div>
+    <div class="calc-wrap">
+      <div class="sl-row"><span class="sl-label">Build size (sqft)</span><input type="range" min="400" max="1200" step="50" value="800" id="sl-sqft" oninput="calc()"><span class="sl-val" id="o-sqft">800 sqft</span></div>
+      <div class="sl-row"><span class="sl-label">Cost per sqft</span><input type="range" min="320" max="700" step="10" value="460" id="sl-psf" oninput="calc()"><span class="sl-val" id="o-psf">$460</span></div>
+      <div class="sl-row"><span class="sl-label">Down / equity in</span><input type="range" min="0" max="30" step="5" value="20" id="sl-dp" oninput="calc()"><span class="sl-val" id="o-dp">20%</span></div>
+      <div class="sl-row"><span class="sl-label">Interest rate</span><input type="range" min="5.0" max="11" step="0.25" value="7.5" id="sl-rate" oninput="calc()"><span class="sl-val" id="o-rate">7.50%</span></div>
+      <div class="sl-row"><span class="sl-label">Loan term</span><input type="range" min="10" max="30" step="5" value="20" id="sl-term" oninput="calc()"><span class="sl-val" id="o-term">20 yrs</span></div>
+      <div class="sl-row"><span class="sl-label">Monthly rent</span><input type="range" min="800" max="3000" step="50" value="1850" id="sl-rent" oninput="calc()"><span class="sl-val" id="o-rent">$1,850</span></div>
+      <div class="calc-result">
+        <div><div class="cr-key">Total build cost</div><div class="cr-val" id="r-cost">—</div></div>
+        <div><div class="cr-key">Loan amount</div><div class="cr-val" id="r-loan">—</div></div>
+        <div><div class="cr-key">Monthly payment (P+I)</div><div class="cr-val" id="r-pay">—</div></div>
+        <div><div class="cr-key">Net cashflow/mo</div><div class="cr-val" id="r-cf">—</div></div>
+        <div><div class="cr-key">Gross yield on cost</div><div class="cr-val" id="r-yield">—</div></div>
+        <div><div class="cr-key">Break-even (years)</div><div class="cr-val" id="r-be">—</div></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- API GUIDE -->
+  <div class="panel" id="panel-api">
+    <div class="info-banner">ℹ King County, Snohomish, Pierce, Clark, and Spokane have full ArcGIS REST APIs — no key required. Smaller counties use the WA State parcel layer. MLS requires NWMLS broker sponsorship; use Attom Data as an alternative.</div>
+
+    <div class="code-section">
+      <div class="code-head"><div class="code-title"><span style="color:var(--accent)">01</span> WA State Parcel API — all 39 counties</div><button class="copy-btn" onclick="copyCode('wa')">Copy</button></div>
+      <pre id="wa"><span class="cmt">// Washington State GeoData Portal — statewide parcel layer
+// https://geo.wa.gov/datasets/WaDNR::wa-state-parcels
+// No API key required — public ArcGIS FeatureServer</span>
+
+<span class="kw">const</span> <span class="ky">WA_PARCELS</span> = <span class="str">'https://services.arcgis.com/jsIt88o09Q0r1j8h/arcgis/rest/services/Washington_State_Parcels/FeatureServer/0'</span>;
+
+<span class="kw">async function</span> <span class="fn">waSearchByAddress</span>(address, county = <span class="str">''</span>) {
+  <span class="kw">let</span> where = <span class="str">`UPPER(SITE_ADDRESS) LIKE UPPER('%${address}%')`</span>;
+  <span class="kw">if</span> (county) where += <span class="str">` AND UPPER(COUNTY_NM) = UPPER('${county}')`</span>;
+  <span class="kw">const</span> p = <span class="kw">new</span> URLSearchParams({
+    where, f: <span class="str">'json'</span>,
+    outFields: <span class="str">'PARCEL_ID,SITE_ADDRESS,COUNTY_NM,LAND_SQFT,ZONING,USE_CODE,YEAR_BUILT,OWNER_NM'</span>,
+    returnGeometry: <span class="nm">false</span>,
+    resultRecordCount: <span class="nm">25</span>
+  });
+  <span class="kw">const</span> r = <span class="kw">await</span> fetch(<span class="str">`${WA_PARCELS}/query?${p}`</span>);
+  <span class="kw">const</span> { features } = <span class="kw">await</span> r.json();
+  <span class="kw">return</span> (features || []).map(f => ({ ...f.attributes, _src: <span class="str">'WA State'</span> }));
+}
+
+<span class="cmt">// King County — dedicated ArcGIS (richer data)</span>
+<span class="kw">const</span> <span class="ky">KC</span> = <span class="str">'https://gismaps.kingcounty.gov/arcgis/rest/services/property/KingCountySitus/MapServer/0'</span>;
+
+<span class="kw">async function</span> <span class="fn">kcSearch</span>(address) {
+  <span class="kw">const</span> p = <span class="kw">new</span> URLSearchParams({
+    where: <span class="str">`UPPER(ADDR_FULL) LIKE UPPER('%${address}%')`</span>,
+    outFields: <span class="str">'PIN,ADDR_FULL,LOT_AREA,ZONE_CLASS,PRESENT_USE,YEAR_BUILT'</span>,
+    returnGeometry: <span class="nm">false</span>, resultRecordCount: <span class="nm">20</span>, f: <span class="str">'json'</span>
+  });
+  <span class="kw">const</span> { features } = <span class="kw">await</span> (await fetch(<span class="str">`${KC}/query?${p}`</span>)).json();
+  <span class="kw">return</span> (features || []).map(f => ({ ...f.attributes, _src: <span class="str">'King County GIS'</span>, _county: <span class="str">'King'</span> }));
+}
+
+<span class="cmt">// Snohomish County</span>
+<span class="kw">const</span> <span class="ky">SNO</span> = <span class="str">'https://gis.snoco.org/maps/rest/services/property/assessor/MapServer/0'</span>;
+
+<span class="kw">async function</span> <span class="fn">snoSearch</span>(address) {
+  <span class="kw">const</span> p = <span class="kw">new</span> URLSearchParams({
+    where: <span class="str">`UPPER(SITE_ADDRESS) LIKE UPPER('%${address}%')`</span>,
+    outFields: <span class="str">'PARCEL_NUM,SITE_ADDRESS,LAND_SQFT,ZONE_CODE,USE_CODE,YEAR_BUILT'</span>,
+    returnGeometry: <span class="nm">false</span>, resultRecordCount: <span class="nm">20</span>, f: <span class="str">'json'</span>
+  });
+  <span class="kw">const</span> { features } = <span class="kw">await</span> (await fetch(<span class="str">`${SNO}/query?${p}`</span>)).json();
+  <span class="kw">return</span> (features || []).map(f => ({
+    PIN: f.attributes.PARCEL_NUM, ADDR_FULL: f.attributes.SITE_ADDRESS,
+    LOT_AREA: f.attributes.LAND_SQFT, ZONE_CLASS: f.attributes.ZONE_CODE,
+    PRESENT_USE: f.attributes.USE_CODE, YEAR_BUILT: f.attributes.YEAR_BUILT,
+    _src: <span class="str">'Snohomish GIS'</span>, _county: <span class="str">'Snohomish'</span>
+  }));
+}</pre>
+    </div>
+
+    <div class="code-section">
+      <div class="code-head"><div class="code-title"><span style="color:var(--amber)">02</span> HB 1337 ADU Eligibility Engine</div><button class="copy-btn" onclick="copyCode('engine')">Copy</button></div>
+      <pre id="engine"><span class="cmt">// Statewide HB 1337 eligibility — applies to all WA counties
+// Handles both urban (UGA) and rural parcels per HB 1337 + HB 1345</span>
+
+<span class="kw">function</span> <span class="fn">assessAdu</span>(attr) {
+  <span class="kw">const</span> zone   = (attr.ZONE_CLASS || attr.ZONING || <span class="str">''</span>).toUpperCase();
+  <span class="kw">const</span> lot    = parseFloat(attr.LOT_AREA || attr.LAND_SQFT) || <span class="nm">0</span>;
+  <span class="kw">const</span> use    = (attr.PRESENT_USE || attr.USE_CODE || <span class="str">''</span>).toUpperCase();
+  <span class="kw">const</span> county = (attr._county || attr.COUNTY_NM || <span class="str">''</span>).toUpperCase();
+
+  <span class="cmt">// County-specific minimum lot sizes</span>
+  <span class="kw">const</span> minLotMap = {
+    'KING': <span class="nm">3200</span>, 'SNOHOMISH': <span class="nm">4800</span>, 'PIERCE': <span class="nm">4000</span>,
+    'CLARK': <span class="nm">4000</span>, 'SPOKANE': <span class="nm">3000</span>, 'THURSTON': <span class="nm">3500</span>,
+    'WHATCOM': <span class="nm">4000</span>, 'KITSAP': <span class="nm">4000</span>
+  };
+  <span class="kw">const</span> minLot = minLotMap[county] || <span class="nm">4000</span>; <span class="cmt">// HB 1337 default</span>
+
+  <span class="cmt">// SF zone detection — covers common WA zone codes</span>
+  <span class="kw">const</span> sfPatterns = [
+    <span class="str">'SF'</span>, <span class="str">'R-SF'</span>, <span class="str">'RS'</span>, <span class="str">'R1'</span>, <span class="str">'R2'</span>, <span class="str">'R4'</span>, <span class="str">'R6'</span>, <span class="str">'R8'</span>,
+    <span class="str">'SFR'</span>, <span class="str">'LDR'</span>, <span class="str">'RES'</span>, <span class="str">'RL'</span>, <span class="str">'SR'</span>, <span class="str">'RR'</span>, <span class="str">'RE'</span>
+  ];
+  <span class="kw">const</span> isSF  = sfPatterns.some(z => zone.includes(z)) || zone.match(<span class="str">/^R-?\d/</span>);
+  <span class="kw">const</span> sfUse = use.includes(<span class="str">'SINGLE'</span>) || use.includes(<span class="str">'SFR'</span>) ||
+                use.includes(<span class="str">'RES'</span>) || use === <span class="str">''</span>;
+  <span class="kw">const</span> lotOk = lot >= minLot;
+
+  <span class="kw">const</span> checks = [], score = { v: <span class="nm">0</span> };
+  <span class="kw">const</span> add = (pass, text, pts) => { checks.push({ pass, text }); <span class="kw">if</span> (pass) score.v += pts; };
+
+  add(isSF,  isSF  ? <span class="str">`Zone ${zone || '—'} — ADUs permitted under HB 1337`</span>
+                   : <span class="str">`Zone ${zone || '—'} — verify ADU eligibility with local planning dept`</span>, <span class="nm">35</span>);
+  add(lotOk, lotOk ? <span class="str">`Lot ${lot.toLocaleString()} sqft ≥ ${minLot.toLocaleString()} sqft local minimum`</span>
+                   : <span class="str">`Lot ${lot.toLocaleString()} sqft below ${minLot.toLocaleString()} sqft minimum — verify with city`</span>, <span class="nm">30</span>);
+  add(sfUse, sfUse ? <span class="str">'Single-family residential use confirmed'</span>
+                   : <span class="str">`Use type may limit ADU — confirm with local planning dept`</span>, <span class="nm">10</span>);
+  add(<span class="nm">true</span>,  <span class="str">'No owner-occupancy required statewide (HB 1337)'</span>, <span class="nm">5</span>);
+  add(<span class="nm">true</span>,  <span class="str">'DADU condo sale permitted — city cannot prohibit (HB 1337 §4(1)(k))'</span>, <span class="nm">5</span>);
+  add(<span class="nm">true</span>,  <span class="str">'HOA restrictions unenforceable for HOAs formed after July 23, 2023'</span>, <span class="nm">3</span>);
+  add(<span class="nm">true</span>,  <span class="str">'WA capital gains tax exempt for real estate sales (WAC 458-20-185)'</span>, <span class="nm">2</span>);
+
+  <span class="kw">if</span> (lot < minLot + <span class="nm">1500</span> && lotOk) add(<span class="nm">false</span>, <span class="str">'Lot is marginal — confirm rear yard depth before designing DADU'</span>, <span class="nm">0</span>);
+
+  <span class="kw">const</span> eligible = (!isSF || !lotOk) ? <span class="str">'ineligible'</span>
+    : lot < minLot + <span class="nm">800</span> ? <span class="str">'conditional'</span> : <span class="str">'eligible'</span>;
+  <span class="kw">const</span> types = eligible === <span class="str">'ineligible'</span> ? [] : lot >= minLot + <span class="nm">800</span> ? [<span class="str">'DADU'</span>,<span class="str">'AADU'</span>] : [<span class="str">'AADU'</span>];
+
+  <span class="kw">return</span> { eligible, score: Math.min(<span class="nm">100</span>, Math.round(score.v)), types, checks };
+}</pre>
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>ADU Scout · Washington State · 39 Counties · HB 1337 (RCW 36.70A.680–.699) · HB 1345</span>
+    <span>Data: King Co. GIS · Snohomish GIS · WA State Parcel Layer · Seattle SDCI</span>
+  </div>
+</div>
+</div>
+
+<!-- MODAL -->
+<div class="mwrap" id="modal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="mhead">
+      <div class="mtitle" id="mtitle">Property Detail</div>
+      <button class="mclose" onclick="closeModal()">✕</button>
+    </div>
+    <div class="mbody" id="mbody"></div>
+  </div>
+</div>
+
+<script>
+/* ═══════════════════════════════════════════
+   GIS ENDPOINTS
+═══════════════════════════════════════════ */
+const ENDPOINTS = {
+  king:      'https://gismaps.kingcounty.gov/arcgis/rest/services/property/KingCountySitus/MapServer/0',
+  snohomish: 'https://gis.snoco.org/maps/rest/services/property/assessor/MapServer/0',
+  wa_state:  'https://services.arcgis.com/jsIt88o09Q0r1j8h/arcgis/rest/services/Washington_State_Parcels/FeatureServer/0',
+  pierce:    'https://gis.co.pierce.wa.us/arcgis/rest/services/Assessor/Parcels/MapServer/0',
+  clark:     'https://gis.clark.wa.gov/arcgis/rest/services/Assessor/ClarkParcel/MapServer/0',
+  spokane:   'https://gisserver1.spokanecounty.org/arcgis/rest/services/assessor/Parcels/MapServer/0',
+};
+
+// Field mappings per county
+const FMAP = {
+  king:      { pin:'PIN',      addr:'ADDR_FULL',    lot:'LOT_AREA',   zone:'ZONE_CLASS', use:'PRESENT_USE', yr:'YEAR_BUILT' },
+  snohomish: { pin:'PARCEL_NUM',addr:'SITE_ADDRESS',lot:'LAND_SQFT',  zone:'ZONE_CODE',  use:'USE_CODE',    yr:'YEAR_BUILT' },
+  pierce:    { pin:'PARCELID', addr:'SITEADDRESS',  lot:'LOTAREASQFT',zone:'ZONING',     use:'USEDESCR',    yr:'YRBUILT'   },
+  clark:     { pin:'TAXPARCELID',addr:'SITEADDRESS',lot:'LOTSQFT',    zone:'ZONING',     use:'USECODE',     yr:'YRBUILT'   },
+  spokane:   { pin:'PARCEL',   addr:'SITEADDRESS',  lot:'SQFT',       zone:'ZONING',     use:'USECODE',     yr:'YRBUILT'   },
+  wa_state:  { pin:'PARCEL_ID',addr:'SITE_ADDRESS', lot:'LAND_SQFT',  zone:'ZONING',     use:'USE_CODE',    yr:'YEAR_BUILT'},
+};
+
+async function gisSearch(text, countyKey) {
+  const ep = ENDPOINTS[countyKey] || ENDPOINTS.wa_state;
+  const fm = FMAP[countyKey]      || FMAP.wa_state;
+  const addrField = fm.addr;
+
+  // Build WHERE clause
+  const where = countyKey === 'wa_state'
+    ? `UPPER(${addrField}) LIKE UPPER('%${text}%') AND UPPER(COUNTY_NM) LIKE UPPER('%${WA_COUNTIES.find(c=>c.key===countyKey)?.name.split(' ')[0]||text}%')`
+    : `UPPER(${addrField}) LIKE UPPER('%${text}%')`;
+
+  const outFields = Object.values(fm).join(',');
+  const p = new URLSearchParams({ where, outFields, returnGeometry: false, resultRecordCount: 25, f: 'json' });
+
+  try {
+    const r = await fetch(ep + '/query?' + p);
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const d = await r.json();
+    if (d.error) throw new Error(d.error.message);
+    return (d.features || []).map(f => normalizeAttr(f.attributes, countyKey, fm));
+  } catch(e) {
+    // Fallback to WA state layer
+    if (countyKey !== 'wa_state') {
+      return await gisSearch(text, 'wa_state');
+    }
+    return [];
+  }
+}
+
+function normalizeAttr(attr, countyKey, fm) {
+  return {
+    PIN:        attr[fm.pin]  || '—',
+    ADDR_FULL:  attr[fm.addr] || '—',
+    LOT_AREA:   parseFloat(attr[fm.lot]) || 0,
+    ZONE_CLASS: attr[fm.zone] || '',
+    PRESENT_USE:attr[fm.use]  || '',
+    YEAR_BUILT: attr[fm.yr]   || '',
+    _county: countyKey,
+    _src: FMAP[countyKey] ? (countyKey.charAt(0).toUpperCase() + countyKey.slice(1) + ' GIS') : 'WA State GIS',
+  };
+}
+
+/* ═══════════════════════════════════════════
+   ADU ENGINE — STATEWIDE HB 1337
+═══════════════════════════════════════════ */
+const MIN_LOT = {
+  king:7200, snohomish:4800, pierce:4000, clark:4000, spokane:3000,
+  thurston:3500, whatcom:4000, kitsap:4000, yakima:4000, benton:4000,
+  wa_state:4000,
+};
+const SF_PATTERNS = ['SF','R-SF','RS','R1','R2','R4','R6','R8','SFR','LDR','RES','RL','SR','RR','RE','NR','UR'];
+
+function assessAdu(attr) {
+  const zone = (attr.ZONE_CLASS || '').toUpperCase();
+  const lot  = parseFloat(attr.LOT_AREA) || 0;
+  const use  = (attr.PRESENT_USE || '').toUpperCase();
+  const ck   = attr._county || 'wa_state';
+  const minLot = MIN_LOT[ck] || 4000;
+
+  const isSF  = SF_PATTERNS.some(z => zone.includes(z)) || /^R-?\d/.test(zone);
+  const sfUse = use.includes('SINGLE') || use.includes('SFR') || use.includes('RES') || use.includes('1 FAM') || use === '';
+  const lotOk = lot >= minLot;
+  const lotMarg = lotOk && lot < minLot + 1000;
+
+  const checks = [], sv = { n: 0 };
+  const a = (pass, text, pts=0) => { checks.push({ pass, text }); if(pass) sv.n += pts; };
+
+  a(isSF,  isSF  ? `Zone ${zone||'SF'} — ADUs permitted under HB 1337` : `Zone ${zone||'—'} — verify ADU eligibility locally`, 35);
+  a(lotOk, lotOk ? `Lot ${lot.toLocaleString()} sqft ≥ ${minLot.toLocaleString()} sqft minimum` : `Lot ${lot.toLocaleString()} sqft below ${minLot.toLocaleString()} sqft minimum`, 30);
+  a(sfUse, sfUse ? 'Single-family residential use' : `Use type may restrict ADU — confirm locally`, 10);
+  a(true,  'No owner-occupancy required (HB 1337)', 5);
+  a(true,  'DADU condo sale cannot be prohibited (HB 1337 §4(1)(k))', 5);
+  a(true,  'HOA rules post-July 2023 cannot restrict ADUs', 3);
+  a(true,  'WA real estate transactions exempt from state capital gains tax', 2);
+  if (lotMarg) a(false, 'Lot is marginal — confirm rear yard depth before committing to DADU design', 0);
+
+  const score = Math.min(100, Math.round(sv.n));
+  const eligible = (!isSF || !lotOk) ? 'ineligible' : lotMarg ? 'conditional' : 'eligible';
+  const types = eligible === 'ineligible' ? [] : eligible === 'conditional' ? ['AADU'] : ['DADU','AADU'];
+  return { eligible, score, types, checks };
+}
+
+function normalize(attr) {
+  const adu = assessAdu(attr);
+  const countyName = WA_COUNTIES.find(c => c.key === attr._county)?.name || (attr._county||'WA');
+  return {
+    addr:   attr.ADDR_FULL || attr.ADDRESS || '—',
+    city:   countyName,
+    parcel: attr.PIN || '—',
+    lot:    parseFloat(attr.LOT_AREA) || 0,
+    zone:   attr.ZONE_CLASS || '—',
+    year:   attr.YEAR_BUILT || '',
+    src:    attr._src || 'GIS',
+    county: attr._county || 'wa_state',
+    ...adu,
+    _raw:   attr,
+  };
+}
+
+/* ═══════════════════════════════════════════
+   WA COUNTIES DIRECTORY
+═══════════════════════════════════════════ */
+const WA_COUNTIES = [
+  { key:'king',      name:'King County',       city:'Seattle',       pop:'2.3M',  tier:'full' },
+  { key:'snohomish', name:'Snohomish County',  city:'Everett',       pop:'870k',  tier:'full' },
+  { key:'pierce',    name:'Pierce County',     city:'Tacoma',        pop:'960k',  tier:'full' },
+  { key:'clark',     name:'Clark County',      city:'Vancouver',     pop:'530k',  tier:'full' },
+  { key:'spokane',   name:'Spokane County',    city:'Spokane',       pop:'560k',  tier:'full' },
+  { key:'thurston',  name:'Thurston County',   city:'Olympia',       pop:'320k',  tier:'partial' },
+  { key:'kitsap',    name:'Kitsap County',     city:'Bremerton',     pop:'280k',  tier:'partial' },
+  { key:'whatcom',   name:'Whatcom County',    city:'Bellingham',    pop:'245k',  tier:'partial' },
+  { key:'yakima',    name:'Yakima County',     city:'Yakima',        pop:'255k',  tier:'partial' },
+  { key:'benton',    name:'Benton County',     city:'Kennewick',     pop:'210k',  tier:'partial' },
+  { key:'cowlitz',   name:'Cowlitz County',    city:'Longview',      pop:'120k',  tier:'partial' },
+  { key:'skagit',    name:'Skagit County',     city:'Mount Vernon',  pop:'130k',  tier:'partial' },
+  { key:'island',    name:'Island County',     city:'Coupeville',    pop:'88k',   tier:'partial' },
+  { key:'mason',     name:'Mason County',      city:'Shelton',       pop:'68k',   tier:'partial' },
+  { key:'lewis',     name:'Lewis County',      city:'Centralia',     pop:'83k',   tier:'partial' },
+  { key:'grant',     name:'Grant County',      city:'Moses Lake',    pop:'105k',  tier:'partial' },
+  { key:'chelan',    name:'Chelan County',     city:'Wenatchee',     pop:'80k',   tier:'partial' },
+  { key:'clallam',   name:'Clallam County',    city:'Port Angeles',  pop:'76k',   tier:'partial' },
+  { key:'okanogan',  name:'Okanogan County',   city:'Okanogan',      pop:'43k',   tier:'manual' },
+  { key:'franklin',  name:'Franklin County',   city:'Pasco',         pop:'100k',  tier:'partial' },
+  { key:'grays_harbor',name:'Grays Harbor',   city:'Aberdeen',      pop:'74k',   tier:'manual' },
+  { key:'jefferson', name:'Jefferson County',  city:'Port Townsend', pop:'33k',   tier:'manual' },
+  { key:'walla_walla',name:'Walla Walla Co.', city:'Walla Walla',   pop:'64k',   tier:'partial' },
+  { key:'whitman',   name:'Whitman County',    city:'Pullman',       pop:'50k',   tier:'manual' },
+  { key:'douglas',   name:'Douglas County',    city:'Waterville',    pop:'42k',   tier:'manual' },
+  { key:'adams',     name:'Adams County',      city:'Ritzville',     pop:'20k',   tier:'manual' },
+  { key:'asotin',    name:'Asotin County',     city:'Clarkston',     pop:'22k',   tier:'manual' },
+  { key:'columbia',  name:'Columbia County',   city:'Dayton',        pop:'4k',    tier:'manual' },
+  { key:'ferry',     name:'Ferry County',      city:'Republic',      pop:'8k',    tier:'manual' },
+  { key:'garfield',  name:'Garfield County',   city:'Pomeroy',       pop:'2k',    tier:'manual' },
+  { key:'klickitat', name:'Klickitat County',  city:'Goldendale',    pop:'22k',   tier:'manual' },
+  { key:'lincoln',   name:'Lincoln County',    city:'Davenport',     pop:'11k',   tier:'manual' },
+  { key:'pacific',   name:'Pacific County',    city:'South Bend',    pop:'22k',   tier:'manual' },
+  { key:'pend_oreille',name:'Pend Oreille Co.',city:'Newport',      pop:'14k',   tier:'manual' },
+  { key:'san_juan',  name:'San Juan County',   city:'Friday Harbor', pop:'17k',   tier:'manual' },
+  { key:'skamania',  name:'Skamania County',   city:'Stevenson',     pop:'12k',   tier:'manual' },
+  { key:'stevens',   name:'Stevens County',    city:'Colville',      pop:'48k',   tier:'manual' },
+  { key:'wahkiakum', name:'Wahkiakum County',  city:'Cathlamet',     pop:'4k',    tier:'manual' },
+];
+
+function buildCountyGrid() {
+  const grid = document.getElementById('county-grid');
+  const tierLabel = { full:'Full GIS API', partial:'WA State Layer', manual:'Manual verify' };
+  grid.innerHTML = WA_COUNTIES.map(c => `
+    <div class="wa-county" onclick="selectCounty('${c.key}')">
+      <div class="wa-cname">${c.name}</div>
+      <div class="wa-cmeta">${c.city} · ${c.pop}</div>
+      <span class="wa-tier tier-${c.tier}">${tierLabel[c.tier]}</span>
+    </div>`).join('');
+}
+
+function selectCounty(key) {
+  document.getElementById('county-sel').value = key;
+  switchTab('results');
+  document.getElementById('addr').focus();
+}
+
+/* ═══════════════════════════════════════════
+   AUTOCOMPLETE
+═══════════════════════════════════════════ */
+let acTimer = null, acIdx = -1, acCache = [];
+
+async function onInput() {
+  const v = document.getElementById('addr').value.trim();
+  document.getElementById('sx').classList.toggle('show', v.length > 0);
+  clearTimeout(acTimer);
+  if (v.length < 4) { closeAC(); return; }
+  acTimer = setTimeout(() => fetchAC(v), 380);
+}
+
+async function fetchAC(text) {
+  const ac = document.getElementById('ac');
+  ac.innerHTML = '<div class="ac-load"><span class="spin"></span>Searching parcels…</div>';
+  ac.classList.add('open');
+  const county = document.getElementById('county-sel').value;
+  const results = await gisSearch(text, county);
+  acCache = results.slice(0, 12);
+  if (!acCache.length) {
+    ac.innerHTML = '<div class="ac-load" style="color:var(--text3)">No parcels found — try a street name without zip, or switch counties</div>';
+    return;
+  }
+  ac.innerHTML = acCache.map((r, i) => `
+    <div class="ac-item" data-i="${i}" onclick="selectAC(${i})">
+      <div class="ac-addr">${r.ADDR_FULL}</div>
+      <div class="ac-meta">${r._county ? r._county.charAt(0).toUpperCase()+r._county.slice(1)+' Co.' : 'WA'} · ${(r.LOT_AREA||0).toLocaleString()} sqft · ${r.ZONE_CLASS||'—'}</div>
+    </div>`).join('');
+  acIdx = -1;
+}
+
+function selectAC(i) {
+  const r = acCache[i];
+  document.getElementById('addr').value = r.ADDR_FULL || '';
+  document.getElementById('sx').classList.add('show');
+  closeAC();
+  runSearchWith([r]);
+}
+
+function onKey(e) {
+  const ac = document.getElementById('ac');
+  if (!ac.classList.contains('open')) { if (e.key === 'Enter') runSearch(); return; }
+  const items = ac.querySelectorAll('.ac-item');
+  if (e.key === 'ArrowDown')  { acIdx = Math.min(acIdx+1, items.length-1); updFocus(items); e.preventDefault(); }
+  else if (e.key === 'ArrowUp') { acIdx = Math.max(acIdx-1, 0); updFocus(items); e.preventDefault(); }
+  else if (e.key === 'Enter') { if (acIdx >= 0) selectAC(acIdx); else { closeAC(); runSearch(); } }
+  else if (e.key === 'Escape') closeAC();
+}
+function updFocus(items) { items.forEach((el,i) => el.classList.toggle('foc', i===acIdx)); if(acIdx>=0) items[acIdx]?.scrollIntoView({block:'nearest'}); }
+function closeAC() { document.getElementById('ac').classList.remove('open'); }
+function clearS() { document.getElementById('addr').value=''; document.getElementById('sx').classList.remove('show'); closeAC(); }
+function onCountyChange() { clearS(); }
+document.addEventListener('click', e => { if (!document.getElementById('swrap').contains(e.target)) closeAC(); });
+
+/* ═══════════════════════════════════════════
+   SEARCH & RENDER
+═══════════════════════════════════════════ */
+let props = [];
+
+async function runSearch() {
+  const q = document.getElementById('addr').value.trim();
+  const county = document.getElementById('county-sel').value;
+  closeAC();
+  if (!q) { alert('Enter an address or parcel number to search.'); return; }
+  showLoad('Querying GIS…', `Fetching from ${WA_COUNTIES.find(c=>c.key===county)?.name || 'WA State'} parcel data`);
+  const results = await gisSearch(q, county);
+  runSearchWith(results, q);
+}
+
+function runSearchWith(raw, query='') {
+  props = raw.map(normalize);
+  renderResults(props, props[0]?._src || 'GIS');
+}
+
+function showLoad(msg, sub) {
+  document.getElementById('empty').style.display = 'none';
+  document.getElementById('loading').style.display = 'flex';
+  document.getElementById('load-msg').textContent = msg;
+  document.getElementById('load-sub').textContent = sub;
+  document.getElementById('sum-bar').style.display = 'none';
+  document.getElementById('pgrid').innerHTML = '';
+  document.getElementById('ct').textContent = '0';
+  setBtn(true);
+}
+
+function setBtn(loading) {
+  const b = document.getElementById('run-btn');
+  b.disabled = loading;
+  b.innerHTML = loading
+    ? '<span class="spin"></span> Searching…'
+    : '<svg width="12" height="12" fill="none" viewBox="0 0 12 12"><path d="M2 1.5l9 4.5-9 4.5V1.5z" fill="white"/></svg> Search Parcels';
+}
+
+function renderResults(ps, src) {
+  setBtn(false);
+  document.getElementById('loading').style.display = 'none';
+  const grid = document.getElementById('pgrid');
+  const bar  = document.getElementById('sum-bar');
+  if (!ps.length) {
+    document.getElementById('empty').style.display = 'flex';
+    document.getElementById('empty').querySelector('.state-title').textContent = 'No parcels found';
+    document.getElementById('empty').querySelector('.state-sub').textContent = 'Try a partial street name (e.g. "48th Ave" instead of the full address), or switch to a different county. GIS APIs may take a moment on first load.';
+    bar.style.display = 'none'; grid.innerHTML = ''; document.getElementById('ct').textContent = '0';
+    return;
+  }
+  document.getElementById('empty').style.display = 'none';
+  bar.style.display = 'grid';
+  document.getElementById('s-e').textContent   = ps.filter(p=>p.eligible==='eligible').length;
+  document.getElementById('s-c').textContent   = ps.filter(p=>p.eligible==='conditional').length;
+  document.getElementById('s-i').textContent   = ps.filter(p=>p.eligible==='ineligible').length;
+  document.getElementById('s-src').textContent = src;
+  document.getElementById('ct').textContent    = ps.length;
+  grid.innerHTML = '';
+  ps.forEach((p, i) => {
+    const flags = p.checks.filter(c=>!c.pass).length;
+    const typeHtml = p.types.map(t=>`<span class="tag g">${t}</span>`).join('');
+    const flagHtml = flags ? `<span class="tag a">${flags} flag${flags>1?'s':''}</span>` : '';
+    const d = document.createElement('div');
+    d.className = 'pcard ' + p.eligible;
+    d.onclick = () => openModal(i);
+    d.innerHTML = `
+      <div class="ct">
+        <div>
+          <div class="ca">${p.addr}</div>
+          <div class="cs">${p.city} · ${p.parcel}</div>
+        </div>
+        <span class="apill ${p.eligible}">${p.eligible}</span>
+      </div>
+      <div class="cm-grid">
+        <div class="cm"><div class="cm-val">${p.lot?(p.lot/1000).toFixed(1)+'k':'—'}</div><div class="cm-key">Lot sqft</div></div>
+        <div class="cm"><div class="cm-val">${(p.zone||'—').substring(0,8)}</div><div class="cm-key">Zone</div></div>
+        <div class="cm"><div class="cm-val">${p.score}</div><div class="cm-key">ADU score</div></div>
+      </div>
+      <div class="tags">
+        ${typeHtml}${flagHtml}
+        ${p.year?`<span class="tag">${p.year}</span>`:''}
+        <span class="tag b">${p.src}</span>
+        ${p.score>=80?'<span class="tag p">★ High potential</span>':''}
+      </div>`;
+    grid.appendChild(d);
+  });
+}
+
+function openModal(i) {
+  const p = props[i];
+  const types = p.types.length
+    ? p.types.map(t=>`<span class="apill eligible" style="margin-right:5px">${t}</span>`).join('')
+    : '<span class="apill ineligible">None eligible</span>';
+  const checks = p.checks.map(c=>
+    `<div class="chk ${c.pass?'pass':'fail'}">
+      <span class="chk-icon">${c.pass?'✓':'✕'}</span><span>${c.text}</span>
+    </div>`).join('');
+  document.getElementById('mtitle').textContent = p.addr;
+  document.getElementById('mbody').innerHTML = `
+    <div class="gis-tag">⚡ ${p.src} — live data</div>
+    <div class="msec-title">Parcel details</div>
+    <div class="m4">
+      <div class="cm"><div class="cm-val">${p.lot?p.lot.toLocaleString():'—'}</div><div class="cm-key">Lot sqft</div></div>
+      <div class="cm"><div class="cm-val">${p.zone||'—'}</div><div class="cm-key">Zone</div></div>
+      <div class="cm"><div class="cm-val">${p.year||'—'}</div><div class="cm-key">Built</div></div>
+      <div class="cm"><div class="cm-val">${p.score}/100</div><div class="cm-key">ADU score</div></div>
+    </div>
+    <hr class="mhr">
+    <div class="msec-title">ADU eligibility · ${types}</div>
+    <div class="chk-list">${checks}</div>
+    <hr class="mhr">
+    <div class="msec-title">Parcel ID</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--text2);margin-bottom:12px">${p.parcel}</div>
+    <div class="msec-title">County</div>
+    <div style="font-size:12px;color:var(--text2)">${p.city} · ${p.src}</div>`;
+  document.getElementById('modal').classList.add('open');
+}
+function closeModal() { document.getElementById('modal').classList.remove('open'); }
+
+/* ═══════════════════════════════════════════
+   DEMO DATA
+═══════════════════════════════════════════ */
+const DEMO_RAW = [
+  { PIN:'00524200000300', ADDR_FULL:'4908 236th St SW, Mountlake Terrace WA 98043', LOT_AREA:7405, ZONE_CLASS:'R-SF', PRESENT_USE:'Single Family', YEAR_BUILT:1951, _county:'snohomish', _src:'Snohomish GIS' },
+  { PIN:'00524200000202', ADDR_FULL:'22204 48th Ave W, Mountlake Terrace WA 98043', LOT_AREA:7841, ZONE_CLASS:'R-SF', PRESENT_USE:'Single Family', YEAR_BUILT:1954, _county:'snohomish', _src:'Snohomish GIS' },
+  { PIN:'00524200000410', ADDR_FULL:'22605 61st Ave W, Mountlake Terrace WA 98043', LOT_AREA:7405, ZONE_CLASS:'R-SF', PRESENT_USE:'Single Family', YEAR_BUILT:1953, _county:'snohomish', _src:'Snohomish GIS' },
+  { PIN:'7770600020',     ADDR_FULL:'17633 10th Ave NE, Shoreline WA 98155',        LOT_AREA:9147, ZONE_CLASS:'R-6',  PRESENT_USE:'Single Family', YEAR_BUILT:1939, _county:'king',      _src:'King County GIS' },
+  { PIN:'7890120007',     ADDR_FULL:'4310 Burke Ave N, Seattle WA 98103',           LOT_AREA:8100, ZONE_CLASS:'RSF 9600', PRESENT_USE:'Single Family', YEAR_BUILT:1960, _county:'king',  _src:'King County GIS' },
+  { PIN:'3456780003',     ADDR_FULL:'9043 Rainier Ave S, Seattle WA 98118',         LOT_AREA:7200, ZONE_CLASS:'RSF 9600', PRESENT_USE:'Single Family', YEAR_BUILT:1968, _county:'king',  _src:'King County GIS' },
+  { PIN:'1234560001',     ADDR_FULL:'2318 NW 58th St, Seattle WA 98107',            LOT_AREA:5000, ZONE_CLASS:'SF 5000', PRESENT_USE:'Single Family', YEAR_BUILT:1948, _county:'king',   _src:'King County GIS' },
+  { PIN:'7865430010',     ADDR_FULL:'4821 Greenwood Ave N, Seattle WA 98103',       LOT_AREA:6240, ZONE_CLASS:'SF 7200', PRESENT_USE:'Single Family', YEAR_BUILT:1952, _county:'king',   _src:'King County GIS' },
+  { PIN:'9900001001',     ADDR_FULL:'1847 S Union Ave, Tacoma WA 98405',            LOT_AREA:6500, ZONE_CLASS:'R-6600', PRESENT_USE:'Single Family', YEAR_BUILT:1955, _county:'pierce',  _src:'Pierce GIS' },
+  { PIN:'9900002001',     ADDR_FULL:'3415 NE 78th St, Vancouver WA 98665',          LOT_AREA:7800, ZONE_CLASS:'R1-7.5', PRESENT_USE:'Single Family', YEAR_BUILT:1963, _county:'clark',   _src:'Clark GIS' },
+  { PIN:'9900003001',     ADDR_FULL:'4212 E 32nd Ave, Spokane WA 99223',            LOT_AREA:8400, ZONE_CLASS:'RSF',     PRESENT_USE:'Single Family', YEAR_BUILT:1958, _county:'spokane', _src:'Spokane GIS' },
+  { PIN:'5678900005',     ADDR_FULL:'3822 Fremont Ave N, Seattle WA 98103',         LOT_AREA:2800, ZONE_CLASS:'SF 5000', PRESENT_USE:'Single Family', YEAR_BUILT:1942, _county:'king',   _src:'King County GIS' },
+  { PIN:'2345670002',     ADDR_FULL:'712 19th Ave E, Seattle WA 98112',             LOT_AREA:3800, ZONE_CLASS:'SF 5000', PRESENT_USE:'Single Family', YEAR_BUILT:1920, _county:'king',   _src:'King County GIS' },
+  { PIN:'9900004001',     ADDR_FULL:'621 Lilly Rd NE, Olympia WA 98506',            LOT_AREA:9200, ZONE_CLASS:'RR 1/5', PRESENT_USE:'Single Family', YEAR_BUILT:1972, _county:'thurston',_src:'WA State GIS' },
+  { PIN:'9900005001',     ADDR_FULL:'1504 Iowa St, Bellingham WA 98229',             LOT_AREA:7000, ZONE_CLASS:'RS',      PRESENT_USE:'Single Family', YEAR_BUILT:1967, _county:'whatcom', _src:'WA State GIS' },
+];
+
+function loadDemo() {
+  clearS();
+  showLoad('Loading demo data…', 'Sample properties across Washington State');
+  setTimeout(() => {
+    props = DEMO_RAW.map(normalize);
+    renderResults(props, 'Demo · 6 Counties');
+  }, 500);
+}
+
+/* ═══════════════════════════════════════════
+   TABS / CHIPS / CALC / COPY / INIT
+═══════════════════════════════════════════ */
+function switchTab(n) {
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  document.querySelectorAll('.panel').forEach(p=>p.classList.remove('on'));
+  document.getElementById('tab-'+n).classList.add('on');
+  document.getElementById('panel-'+n).classList.add('on');
+}
+function toggleChip(id) { document.getElementById(id).classList.toggle('on'); }
+
+function calc() {
+  const sqft=+document.getElementById('sl-sqft').value, psf=+document.getElementById('sl-psf').value;
+  const dp=+document.getElementById('sl-dp').value/100, rate=+document.getElementById('sl-rate').value/100/12;
+  const term=+document.getElementById('sl-term').value*12, rent=+document.getElementById('sl-rent').value;
+  document.getElementById('o-sqft').textContent=sqft+' sqft';
+  document.getElementById('o-psf').textContent='$'+psf;
+  document.getElementById('o-dp').textContent=Math.round(dp*100)+'%';
+  document.getElementById('o-rate').textContent=(+document.getElementById('sl-rate').value).toFixed(2)+'%';
+  document.getElementById('o-term').textContent=document.getElementById('sl-term').value+' yrs';
+  document.getElementById('o-rent').textContent='$'+rent.toLocaleString();
+  const cost=sqft*psf, loan=cost*(1-dp);
+  const pay=rate===0?loan/term:loan*rate*Math.pow(1+rate,term)/(Math.pow(1+rate,term)-1);
+  const cf=rent-pay, yld=rent*12/cost*100, be=cost/(rent*12);
+  const f=n=>'$'+Math.round(n).toLocaleString();
+  document.getElementById('r-cost').textContent=f(cost);
+  document.getElementById('r-loan').textContent=f(loan);
+  document.getElementById('r-pay').textContent=f(pay)+'/mo';
+  const ce=document.getElementById('r-cf');
+  ce.textContent=(cf>=0?'+':'')+f(cf)+'/mo'; ce.style.color=cf>=0?'var(--green)':'var(--red)';
+  document.getElementById('r-yield').textContent=yld.toFixed(1)+'%';
+  document.getElementById('r-be').textContent=be.toFixed(1)+' yrs';
+}
+
+function copyCode(id) {
+  navigator.clipboard.writeText(document.getElementById(id).innerText).catch(()=>{});
+  event.target.textContent='Copied!';
+  setTimeout(()=>event.target.textContent='Copy', 1800);
+}
+
+// Init
+buildCountyGrid();
+calc();
+</script>
+</body>
+</html>
